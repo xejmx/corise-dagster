@@ -17,8 +17,13 @@ from workspaces.types import Aggregation, Stock
 
 
 @op(
+    config_schema={"s3_key": String},
+    required_resource_keys={"s3"},
+    tags={"kind": "s3"},
+    out = {"stocks": Out(dagster_type = List[Stock],
+    description = "Get a list of stock data from s3_key")}
 )
-def get_s3_data():
+def get_s3_data(context: OpExecutionContext):
     """
     This op reads a file from S3 (provided as a config schema) 
     and converts the contents into a list of our custom data type Stock. 
@@ -28,12 +33,30 @@ def get_s3_data():
     from remote storage 
     (in this case our localstack version of S3 within Docker).
     """
-    pass
+
+    s3_key = context.op_config["s3_key"]
+    s3_data = context.resources.s3.get_data(s3_key)
+    return list(Stock.from_list(row) for row in s3_data)
 
 
-@op
-def process_data():
-    pass
+@op(
+    ins={"stock_list": In(dagster_type=List[Stock], description="List of Stock")},
+    out={"aggregation": Out(dagster_type=Aggregation,
+                            description="Aggregated value from data")}
+)
+def process_data(context, stock_list):
+    """
+    using context from previous op and the returned stock_list, 
+    this op takes the stock list converting from Stock class 
+    and turning into a dictionary to turn into a Pandas DataFrame. 
+    Then it's just a matter of finding the max 
+    and pulling out the required Aggregation class attributes 
+    and readjusting their datatype
+    """
+
+    highest = max(stock_list, key = lambda x: x.high)
+
+    return Aggregation(date=highest.date, high=highest.high)
 
 
 @op
