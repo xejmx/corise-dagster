@@ -75,17 +75,9 @@ def process_data_op(context, stock_list):
     and readjusting their datatype
     """
 
-    df = pd.DataFrame([dict(s) for s in stock_list])
-    high_date, high_value = df.loc[df.high == max(
-        df.high)]['date'], df.loc[df.high == max(df.high)]['high']
+    highest = max(stock_list, key = lambda x: x.high)
 
-    return Aggregation(
-        date=datetime(
-            int(high_date.dt.year),
-            int(high_date.dt.month),
-            int(high_date.dt.day)
-        ),
-        high=high_value)
+    return Aggregation(date=highest.date, high=highest.high)
 
 
 @op(
