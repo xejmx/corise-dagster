@@ -50,26 +50,73 @@ def csv_helper(file_name: str) -> Iterator[Stock]:
             yield Stock.from_list(row)
 
 
-@op
-def get_s3_data_op():
+@op(config_schema={"s3_key": String}, out={"stocks": Out(dagster_type=List[Stock], description="List of Stock")})
+def get_s3_data_op(context):
+    """
+    using s3_key context (currently a static csv file) 
+    and the csv_helper function, this creates a list of Stock
+    """
+
+    return list(csv_helper(context.op_config['s3_key']))
+
+
+@op(
+    ins={"stock_list": In(dagster_type=List[Stock], description="List of Stock")},
+    out={"aggregation": Out(dagster_type=Aggregation,
+                            description="Aggregated value from data")}
+)
+def process_data_op(context, stock_list):
+    """
+    using context from previous op and the returned stock_list, 
+    this op takes the stock list converting from Stock class 
+    and turning into a dictionary to turn into a Pandas DataFrame. 
+    Then it's just a matter of finding the max 
+    and pulling out the required Aggregation class attributes 
+    and readjusting their datatype
+    """
+
+    df = pd.DataFrame([dict(s) for s in stock_list])
+    high_date, high_value = df.loc[df.high == max(
+        df.high)]['date'], df.loc[df.high == max(df.high)]['high']
+
+    return Aggregation(
+        date=datetime(
+            int(high_date.dt.year),
+            int(high_date.dt.month),
+            int(high_date.dt.day)
+        ),
+        high=high_value)
+
+
+@op(
+    ins={"Aggregation": In(dagster_type=Aggregation,
+                            description="highest value of stock")},
+    out={"nothing": Out(dagster_type=Nothing,
+                            description="Nothing for now, thank you!")}
+)
+def put_redis_data_op(context, Aggregation):
     pass
 
 
-@op
-def process_data_op():
-    pass
-
-
-@op
-def put_redis_data_op():
-    pass
-
-
-@op
-def put_s3_data_op():
+@op(
+    
+    ins={"Aggregation": In(dagster_type=Aggregation,
+                            description="highest value of stock")},
+    out={"nothing": Out(dagster_type=Nothing,
+                            description="Nothing for now, thank you!")}
+)
+def put_s3_data_op(context, Aggregation):
     pass
 
 
 @job
 def machine_learning_job():
-    pass
+
+    a = get_s3_data_op()
+
+    b = process_data_op(a)
+
+    redis_line = put_redis_data_op(b)
+
+    s3_line = put_s3_data_op(b)
+
