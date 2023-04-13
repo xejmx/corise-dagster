@@ -17,10 +17,7 @@ from workspaces.types import Aggregation, Stock
 
 
 @op(
-    required_resource_keys={"database"},
-    ins={"table_name": In(dagster_type=String)},
-    tags={"kind": "postgres"},
-
+)
 def get_s3_data():
     """
     This op reads a file from S3 (provided as a config schema) 
