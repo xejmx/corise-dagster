@@ -20,8 +20,8 @@ from workspaces.types import Aggregation, Stock
     config_schema={"s3_key": String},
     required_resource_keys={"s3"},
     tags={"kind": "s3"},
-    out = {"stocks": Out(dagster_type = List[Stock],
-    description = "Get a list of stock data from s3_key")}
+    out = {"stocks": Out(dagster_type = List[Stock])},
+    description = "Get a list of stock data from s3_key"
 )
 def get_s3_data(context: OpExecutionContext):
     """
@@ -44,7 +44,7 @@ def get_s3_data(context: OpExecutionContext):
     out={"aggregation": Out(dagster_type=Aggregation,
                             description="Aggregated value from data")}
 )
-def process_data(context, stock_list):
+def process_data(context, stock_list) -> Aggregation:
     """
     using context from previous op and the returned stock_list, 
     this op takes the stock list converting from Stock class 
@@ -59,8 +59,11 @@ def process_data(context, stock_list):
     return Aggregation(date=highest.date, high=highest.high)
 
 
-@op
-def put_redis_data():
+@op(
+    required_resource_keys={"redis"},
+    tags={"kind": "Redis"}
+)
+def put_redis_data(context: OpExecutionContext, aggregation: Aggregation):
     """
     This op relies on the redis_resource. 
     In week one, our op did not do anything besides accept the output 
@@ -73,11 +76,13 @@ def put_redis_data():
     and the high should be our value, but be careful because the put_data method 
     expects those values as strings.
     """
-    pass
+    context.resources.redis.put_data(name=str(aggregation.date), value=str(aggregation.high))
 
-
-@op
-def put_s3_data():
+@op(
+    required_resource_keys={"s3"},
+    tags={"kind": "s3"}
+)
+def put_s3_data(context: OpExecutionContext, aggregation: Aggregation):
     """
     This op also relies on the same S3 resource as get_s3_data. 
     For the sake of this project we will use the same bucket 
@@ -88,12 +93,21 @@ def put_s3_data():
     (as it is with the get_s3_data op) 
     but should be generated within the op itself.
     """
-    pass
+    
+    context.resources.s3.put_data(key_name=str(aggregation.date), data=Aggregation)
 
 
 @graph
 def machine_learning_graph():
-    pass
+    
+
+    a = get_s3_data()
+
+    b = process_data(a)
+
+    redis_line = put_redis_data(b)
+
+    s3_line = put_s3_data(b)
 
 
 local = {
@@ -110,8 +124,14 @@ docker = {
 
 machine_learning_job_local = machine_learning_graph.to_job(
     name="machine_learning_job_local",
+    config=local,
+    resource_defs={"s3":mock_s3_resource,
+    "redis":ResourceDefinition.mock_resource()}
 )
 
 machine_learning_job_docker = machine_learning_graph.to_job(
     name="machine_learning_job_docker",
+    config=docker,
+    resource_defs={'s3': s3_resource,
+    'redis':redis_resource}
 )
