@@ -94,7 +94,7 @@ def put_s3_data(context: OpExecutionContext, aggregation: Aggregation):
     but should be generated within the op itself.
     """
     
-    context.resources.s3.put_data(key_name=str(aggregation.date), data=Aggregation)
+    context.resources.s3.put_data(key_name=str(aggregation.date), data=aggregation)
 
 
 @graph
